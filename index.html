@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle do Toldo</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; }
+    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); display: inline-block; }
+    input { width: 100px; padding: 10px; margin: 10px; font-size: 16px; text-align: center; }
+    button { padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; color: white; margin: 10px;}
+    .btn-blue { background-color: #007BFF; }
+    .btn-green { background-color: #28A745; }
+    button:disabled { background-color: #cccccc; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Painel do Alarme - Toldo</h2>
+    <p id="status">Status: Desconectado</p>
+    
+    <button id="btnConectar" class="btn-blue">🔗 Conectar via Bluetooth</button>
+    <br><hr><br>
+
+    <label>Frequência Mínima (Hz)</label><br>
+    <input type="number" id="inputMin" value="4000"><br>
+
+    <label>Frequência Máxima (Hz)</label><br>
+    <input type="number" id="inputMax" value="7000"><br>
+
+    <button id="btnSalvar" class="btn-green" disabled>💾 Salvar no ESP32</button>
+  </div>
+
+  <script>
+    // As chaves UUID precisam ser minúsculas no JavaScript
+    const serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    const charMinUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    const charMaxUuid = "1c5a968d-8a21-4f10-a292-938fc283c748";
+
+    let charMin, charMax;
+    const statusText = document.getElementById('status');
+    const btnSalvar = document.getElementById('btnSalvar');
+
+    document.getElementById('btnConectar').addEventListener('click', async () => {
+      try {
+        statusText.innerText = 'Buscando dispositivo...';
+        
+        // Abre a janela do navegador pedindo permissão de Bluetooth
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'Toldo Inteligente' }],
+          optionalServices: [serviceUuid]
+        });
+
+        statusText.innerText = 'Conectando ao GATT...';
+        const server = await device.gatt.connect();
+        
+        statusText.innerText = 'Lendo serviços...';
+        const service = await server.getPrimaryService(serviceUuid);
+
+        charMin = await service.getCharacteristic(charMinUuid);
+        charMax = await service.getCharacteristic(charMaxUuid);
+
+        statusText.innerText = '✅ Conectado e Pronto!';
+        btnSalvar.disabled = false;
+
+      } catch(error) {
+        statusText.innerText = '❌ Erro: ' + error;
+      }
+    });
+
+    document.getElementById('btnSalvar').addEventListener('click', async () => {
+      try {
+        statusText.innerText = 'Enviando...';
+        let valMin = document.getElementById('inputMin').value;
+        let valMax = document.getElementById('inputMax').value;
+
+        // O ESP32 espera receber "texto", então convertemos o número digitado
+        let encoder = new TextEncoder();
+        await charMin.writeValue(encoder.encode(valMin));
+        await charMax.writeValue(encoder.encode(valMax));
+
+        statusText.innerText = '✅ Frequências atualizadas e salvas!';
+      } catch(error) {
+        statusText.innerText = '❌ Erro ao salvar: ' + error;
+      }
+    });
+  </script>
+
+</body>
+</html>
