@@ -3,24 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Controle do Toldo</title>
+  <title>Toldo Inteligente</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; }
-    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); display: inline-block; }
-    input { width: 100px; padding: 10px; margin: 10px; font-size: 16px; text-align: center; }
-    button { padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; color: white; margin: 10px;}
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 20px; background-color: #f4f4f9; }
+    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); display: inline-block; max-width: 350px; width: 90%; }
+    .dashboard { display: flex; justify-content: space-around; background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold;}
+    .dash-item { display: flex; flex-direction: column; font-size: 14px;}
+    .dash-value { font-size: 22px; color: #007BFF; margin-top: 5px;}
+    input { width: 80px; padding: 8px; margin: 5px; font-size: 16px; text-align: center; border: 1px solid #ccc; border-radius: 5px;}
+    button { padding: 12px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; color: white; margin: 10px; width: 90%;}
     .btn-blue { background-color: #007BFF; }
     .btn-green { background-color: #28A745; }
+    .btn-gray { background-color: #6c757d; }
     button:disabled { background-color: #cccccc; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h2>Painel do Alarme - Toldo</h2>
-    <p id="status">Status: Desconectado</p>
+    <h2 style="margin-top: 0;">Espantalho Inteligente</h2>
+    <p id="statusTxt" style="color: #666;">Status: Desconectado</p>
     
-    <button id="btnConectar" class="btn-blue">🔗 Conectar via Bluetooth</button>
+    <div class="dashboard">
+      <div class="dash-item">Bateria <span class="dash-value" id="valBat">--%</span></div>
+      <div class="dash-item">Disparos <span class="dash-value" id="valDisp">--</span></div>
+      <div class="dash-item">Último <span class="dash-value" id="valTempo">--</span></div>
+    </div>
+
+    <button id="btnConectar" class="btn-blue">🔗 Conectar Bluetooth</button>
+    <button id="btnAtualizar" class="btn-gray" style="display:none;">🔄 Atualizar Dados</button>
     <br><hr><br>
 
     <label>Frequência Mínima (Hz)</label><br>
@@ -29,60 +40,89 @@
     <label>Frequência Máxima (Hz)</label><br>
     <input type="number" id="inputMax" value="7000"><br>
 
-    <button id="btnSalvar" class="btn-green" disabled>💾 Salvar no ESP32</button>
+    <button id="btnSalvar" class="btn-green" disabled>💾 Salvar Som</button>
   </div>
 
   <script>
-    // As chaves UUID precisam ser minúsculas no JavaScript
     const serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
     const charMinUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
     const charMaxUuid = "1c5a968d-8a21-4f10-a292-938fc283c748";
+    const charStatusUuid = "e5b9148d-64fb-4b53-beeb-099bc1dffdd4"; // Novo UUID
 
-    let charMin, charMax;
-    const statusText = document.getElementById('status');
-    const btnSalvar = document.getElementById('btnSalvar');
+    let charMin, charMax, charStatus;
+    const statusTxt = document.getElementById('statusTxt');
+
+    async function lerStatus() {
+      if(!charStatus) return;
+      try {
+        let value = await charStatus.readValue();
+        let texto = new TextDecoder().decode(value); // Ex: "95|4|15"
+        let dados = texto.split('|');
+        
+        document.getElementById('valBat').innerText = dados[0] + "%";
+        document.getElementById('valDisp').innerText = dados[1];
+        
+        if(dados[2] === "-1") {
+          document.getElementById('valTempo').innerText = "Nenhum";
+        } else {
+          document.getElementById('valTempo').innerText = dados[2] + " min";
+        }
+      } catch(e) { console.log("Erro ao ler status", e); }
+    }
 
     document.getElementById('btnConectar').addEventListener('click', async () => {
       try {
-        statusText.innerText = 'Buscando dispositivo...';
-        
-        // Abre a janela do navegador pedindo permissão de Bluetooth
+        statusTxt.innerText = 'Buscando...';
         const device = await navigator.bluetooth.requestDevice({
           filters: [{ name: 'Toldo Inteligente' }],
           optionalServices: [serviceUuid]
         });
 
-        statusText.innerText = 'Conectando ao GATT...';
+        statusTxt.innerText = 'Conectando...';
         const server = await device.gatt.connect();
-        
-        statusText.innerText = 'Lendo serviços...';
         const service = await server.getPrimaryService(serviceUuid);
 
         charMin = await service.getCharacteristic(charMinUuid);
         charMax = await service.getCharacteristic(charMaxUuid);
+        charStatus = await service.getCharacteristic(charStatusUuid);
 
-        statusText.innerText = '✅ Conectado e Pronto!';
-        btnSalvar.disabled = false;
+        statusTxt.innerText = '✅ Conectado!';
+        statusTxt.style.color = '#28A745';
+        
+        document.getElementById('btnSalvar').disabled = false;
+        document.getElementById('btnConectar').style.display = 'none';
+        document.getElementById('btnAtualizar').style.display = 'inline-block';
+
+        // Lê os valores salvos e atualiza a tela automaticamente
+        let valMin = await charMin.readValue();
+        document.getElementById('inputMin').value = new TextDecoder().decode(valMin);
+        
+        let valMax = await charMax.readValue();
+        document.getElementById('inputMax').value = new TextDecoder().decode(valMax);
+
+        await lerStatus();
 
       } catch(error) {
-        statusText.innerText = '❌ Erro: ' + error;
+        statusTxt.innerText = '❌ Erro de conexão';
+        console.error(error);
       }
     });
 
+    document.getElementById('btnAtualizar').addEventListener('click', lerStatus);
+
     document.getElementById('btnSalvar').addEventListener('click', async () => {
       try {
-        statusText.innerText = 'Enviando...';
+        statusTxt.innerText = 'Salvando...';
         let valMin = document.getElementById('inputMin').value;
         let valMax = document.getElementById('inputMax').value;
 
-        // O ESP32 espera receber "texto", então convertemos o número digitado
         let encoder = new TextEncoder();
         await charMin.writeValue(encoder.encode(valMin));
         await charMax.writeValue(encoder.encode(valMax));
 
-        statusText.innerText = '✅ Frequências atualizadas e salvas!';
+        statusTxt.innerText = '✅ Som atualizado!';
       } catch(error) {
-        statusText.innerText = '❌ Erro ao salvar: ' + error;
+        statusTxt.innerText = '❌ Erro ao salvar';
       }
     });
   </script>
